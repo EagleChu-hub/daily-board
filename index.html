@@ -1,0 +1,608 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>每日戰力</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="每日戰力">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#fce5cd">
+<link rel="manifest" href="manifest.webmanifest">
+<style>
+  :root {
+    --bg: #f6f3ef; --card: #fff; --ink: #222; --mute: #777; --line: #e3ddd5;
+    --peach: #fce5cd; --rose: #e6b8af; --pink: #f4cccc; --green: #d9ead3; --cream: #fff2cc;
+    --orange: #ff9900; --orange2: #e69138; --blue: #a4c2f4; --accent: #c0504d; --warn: #fff4d6; --warnline: #f0c36d;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif; font-size: 17px; }
+  body { padding: 0 0 calc(110px + env(safe-area-inset-bottom)); }
+  header { position: sticky; top: 0; z-index: 5; background: var(--peach); padding: calc(8px + env(safe-area-inset-top)) 16px 10px;
+    border-bottom: 1px solid #ecd2b3; }
+  .titlebar { display: flex; align-items: center; justify-content: space-between; }
+  .titlebar h1 { font-size: 18px; margin: 0; letter-spacing: 1px; }
+  .trial { font-size: 11px; background: var(--accent); color: #fff; border-radius: 8px; padding: 2px 6px; margin-left: 6px; vertical-align: middle; }
+  .iconbtn { border: 0; background: transparent; font-size: 22px; padding: 4px 8px; }
+  .datenav { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
+  .datenav button { border: 0; background: #fff8; border-radius: 10px; font-size: 22px; width: 44px; height: 40px; }
+  .datenav .d { text-align: center; }
+  .datenav .d b { font-size: 18px; display: block; }
+  .datenav .d span { font-size: 13px; color: #6b5640; }
+  main { padding: 12px 16px; max-width: 560px; margin: 0 auto; }
+  .card { background: var(--card); border-radius: 14px; padding: 14px; margin-bottom: 14px; box-shadow: 0 1px 2px #0001; }
+  .card h2 { font-size: 16px; margin: 0 0 10px; display: flex; justify-content: space-between; align-items: center; }
+  .card h2 small { font-weight: normal; color: var(--mute); font-size: 13px; }
+  .field { display: grid; grid-template-columns: 7.5em 1fr 2em; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .field label { font-size: 15px; }
+  .field .u { color: var(--mute); font-size: 14px; }
+  input, select { font: inherit; border: 1px solid #d8d0c6; border-radius: 10px; padding: 10px 10px; width: 100%; background: #fff; color: var(--ink); min-width: 0; }
+  input:focus, select:focus { outline: 2px solid #e8a87c; border-color: transparent; }
+  .big { font-size: 22px; font-weight: 600; text-align: right; }
+  .calc { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 4px; }
+  .calc div { background: var(--cream); border-radius: 10px; padding: 8px; text-align: center; }
+  .calc div small { display: block; font-size: 12px; color: #7a6a3a; }
+  .calc div b { font-size: 18px; }
+  .btn { border: 0; border-radius: 12px; padding: 12px 14px; font: inherit; font-weight: 600; background: #efe7dc; color: var(--ink); }
+  .btn.primary { background: var(--accent); color: #fff; }
+  .btn.full { width: 100%; }
+  .btn:disabled { opacity: .5; }
+  .staff { border: 1px solid var(--line); border-radius: 12px; padding: 10px; margin-bottom: 10px; }
+  .staff.review { background: var(--warn); border-color: var(--warnline); }
+  .staff .r1 { display: grid; grid-template-columns: 1fr 6.4em 34px 34px; gap: 6px; }
+  .staff .r2 { display: grid; grid-template-columns: 1fr 3.2em; gap: 6px; margin-top: 6px; align-items: center; }
+  .staff input, .staff select { padding: 8px 8px; font-size: 16px; }
+  .staff .r2 input { letter-spacing: -0.3px; font-variant-numeric: tabular-nums; }
+  .staff .r1 button { border: 0; background: #0000000d; border-radius: 8px; font-size: 16px; padding: 0; }
+  .staff .hrs { text-align: center; font-weight: 700; }
+  .staff .hrs.bad { color: #c00; }
+  .staff .notes { font-size: 13px; color: #8a5a00; margin-top: 6px; }
+  .staff .ops { display: flex; justify-content: flex-end; margin-top: 6px; }
+  .staff .ops button { border: 0; background: var(--accent); color: #fff; border-radius: 8px; padding: 6px 12px; font-size: 15px; }
+  .total { display: flex; justify-content: space-between; align-items: center; background: var(--green); border-radius: 10px; padding: 10px 12px; font-weight: 700; }
+  .msg { font-size: 14px; padding: 8px 10px; border-radius: 10px; margin: 8px 0; }
+  .msg.warn { background: var(--warn); border: 1px solid var(--warnline); }
+  .msg.err { background: #fde2e1; border: 1px solid #f2a7a3; }
+  .msg.ok { background: #e5f4e3; border: 1px solid #b6dcb0; }
+  .stock { display: grid; grid-template-columns: 4.6em 1fr 4.4em; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .stock .nm { font-size: 15px; }
+  .stock .nm small { display: block; color: var(--mute); font-size: 12px; }
+  .stepper { display: grid; grid-template-columns: 42px 1fr 42px; gap: 4px; }
+  .stepper button { border: 0; background: #efe7dc; border-radius: 10px; font-size: 22px; font-weight: 600; }
+  .stepper input { text-align: center; font-size: 19px; font-weight: 600; padding: 8px 4px; }
+  .stock .amt { text-align: right; font-size: 14px; color: #555; font-variant-numeric: tabular-nums; }
+  .sub { display: flex; justify-content: space-between; font-weight: 700; padding: 8px 2px; border-top: 1px dashed var(--line); margin-top: 4px; }
+  .grand { background: var(--blue); border-radius: 10px; padding: 10px 12px; display: flex; justify-content: space-between; font-weight: 700; }
+  .seg { font-size: 14px; font-weight: 700; margin: 6px 0 8px; color: #7a4b45; }
+  footer { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; background: #fffdfa; border-top: 1px solid var(--line);
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  footer .btn { padding: 14px 8px; font-size: 16px; }
+  .sheet { position: fixed; inset: 0; z-index: 10; background: #0007; display: none; align-items: flex-end; justify-content: center; }
+  .sheet.on { display: flex; }
+  .panel { background: #fff; width: 100%; max-width: 600px; max-height: 92vh; overflow: auto; border-radius: 18px 18px 0 0;
+    padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); }
+  .panel h3 { margin: 0 0 10px; display: flex; justify-content: space-between; align-items: center; }
+  .panel img { width: 100%; border: 1px solid var(--line); border-radius: 6px; }
+  .step { border: 1px solid var(--line); border-radius: 12px; padding: 10px; margin-bottom: 10px; display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+  .step.done { background: #eef7ec; border-color: #b6dcb0; }
+  .step .cell { font-weight: 700; font-size: 16px; }
+  .step .cell code { background: var(--peach); padding: 1px 6px; border-radius: 6px; font-family: inherit; }
+  .step pre { margin: 4px 0 0; font-size: 13px; color: #555; white-space: pre-wrap; font-family: inherit; max-height: 7.5em; overflow: hidden; }
+  textarea { width: 100%; min-height: 120px; font: 14px/1.4 ui-monospace, monospace; border: 1px solid #d8d0c6; border-radius: 10px; padding: 10px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .hint { font-size: 13px; color: var(--mute); line-height: 1.5; }
+  .toast { position: fixed; left: 50%; bottom: calc(100px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: #333; color: #fff;
+    padding: 10px 16px; border-radius: 20px; font-size: 15px; z-index: 20; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .toast.on { opacity: .95; }
+</style>
+</head>
+<body>
+<header>
+  <div class="titlebar">
+    <h1><span id="storeName">南西</span> 每日戰力<span class="trial">試用版</span></h1>
+    <button class="iconbtn" id="btnSettings" aria-label="設定">⚙︎</button>
+  </div>
+  <div class="datenav">
+    <button id="prevDay" aria-label="前一天">‹</button>
+    <div class="d"><b id="todayLabel"></b><span id="tomorrowLabel"></span></div>
+    <button id="nextDay" aria-label="後一天">›</button>
+  </div>
+</header>
+
+<main id="app">
+  <section class="card">
+    <h2>今日業績 <small id="todayShort"></small></h2>
+    <div class="field"><label for="rev">營業額(含稅)</label><input id="rev" class="big" inputmode="numeric" pattern="[0-9]*" autocomplete="off"><span class="u">元</span></div>
+    <div class="field"><label for="cust">來客數</label><input id="cust" class="big" inputmode="numeric" pattern="[0-9]*" autocomplete="off"><span class="u">人</span></div>
+    <div class="field"><label for="n88">88私房菜</label><input id="n88" class="big" inputmode="numeric" pattern="[0-9]*" autocomplete="off"><span class="u">份</span></div>
+    <div class="calc">
+      <div><small>營業額(未稅)</small><b id="outNet">–</b></div>
+      <div><small>平均客單</small><b id="outAvg">–</b></div>
+      <div><small>88 佔比</small><b id="out88">–</b></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>明日戰力 <small id="tmrShort"></small></h2>
+    <button class="btn primary full" id="btnFetch">從大班表帶入明天的班</button>
+    <div id="fetchMsg"></div>
+    <div id="staffList" style="margin-top:10px"></div>
+    <div class="row" style="margin-bottom:10px">
+      <button class="btn" id="btnAddStaff" style="flex:1">＋ 新增一人</button>
+    </div>
+    <div class="total"><span>明日人力總時數</span><span id="outHours">0.0 小時</span></div>
+    <div id="staffWarn"></div>
+  </section>
+
+  <section class="card">
+    <h2>盤點 <small>預設帶入上一次的數量</small></h2>
+    <div class="seg">牛肉</div>
+    <div id="beefList"></div>
+    <div class="sub"><span>牛肉庫存成本</span><span id="beefSum">0.0</span></div>
+    <div class="seg" style="margin-top:12px">海鮮／雞腿</div>
+    <div id="seaList"></div>
+    <div class="sub"><span>海鮮/雞腿庫存成本</span><span id="seaSum">0.0</span></div>
+    <div class="grand" style="margin-top:8px"><span>庫存總成本</span><span id="grandSum">0.0</span></div>
+  </section>
+
+  <p class="hint" style="text-align:center">資料只存在這支手機裡，輸入時自動儲存。</p>
+</main>
+
+<footer>
+  <button class="btn primary" id="btnImage">產生 LINE 圖</button>
+  <button class="btn" id="btnPaste">填表單小抄</button>
+</footer>
+
+<!-- 圖片 -->
+<div class="sheet" id="sheetImage"><div class="panel">
+  <h3>LINE 圖 <button class="iconbtn" data-close>✕</button></h3>
+  <img id="imgOut" alt="今日戰力表">
+  <div class="row" style="margin-top:12px">
+    <button class="btn primary" id="btnShare" style="flex:1">分享到 LINE</button>
+  </div>
+  <p class="hint">若沒有跳出分享選單：長按上面的圖 →「儲存到照片」，再到 LINE 傳送。</p>
+</div></div>
+
+<!-- 小抄 -->
+<div class="sheet" id="sheetPaste"><div class="panel">
+  <h3>填表單小抄 <button class="iconbtn" data-close>✕</button></h3>
+  <div class="msg warn">試用中：在 Google 試算表 App 點<b>格子</b>→再點一下→「貼上」。如果貼完位置不對，請截圖回報。公式格（未稅、88%、時數、金額）不用動。</div>
+  <div id="pasteSteps"></div>
+</div></div>
+
+<!-- 設定 -->
+<div class="sheet" id="sheetSettings"><div class="panel">
+  <h3>設定 <button class="iconbtn" data-close>✕</button></h3>
+  <div id="cfgState"></div>
+  <p class="hint">第一次使用：把收到的「設定碼」整段貼到下面，按「套用設定碼」。</p>
+  <textarea id="cfgInput" placeholder="貼上設定碼"></textarea>
+  <div class="row" style="margin:8px 0 16px"><button class="btn primary" id="btnApplyCfg">套用設定碼</button></div>
+  <h3 style="font-size:16px">盤點品項名稱</h3>
+  <p class="hint">品項換了（例如骰子牛→湯料）可在這裡改名；單價跟著設定碼走。</p>
+  <div id="itemNames"></div>
+  <h3 style="font-size:16px;margin-top:16px">備份</h3>
+  <div class="row">
+    <button class="btn" id="btnExport">複製備份資料</button>
+    <button class="btn" id="btnImport">貼上備份資料還原</button>
+  </div>
+  <textarea id="backupBox" placeholder="還原時把備份資料貼在這裡" style="margin-top:8px;min-height:80px"></textarea>
+</div></div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import { sheetHours, totalHours, normalizeShift, parseCSV, extractRoster, candidateTabs } from './lib/hours.js';
+
+const $ = (id) => document.getElementById(id);
+const LS = { cfg: 'nx.cfg', rec: 'nx.records', titles: 'nx.titles' };
+const load = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
+const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { toast('儲存失敗（手機空間或隱私模式？）'); } };
+
+const DEFAULT_TITLE_OPTIONS = ['執行長', '區經理', '店長', '師傅', '內計時', '外計時', '打烊', '支援', '六小正', '正職'];
+let cfg = load(LS.cfg, null);
+let records = load(LS.rec, {});
+let learnedTitles = load(LS.titles, {});
+
+// ---------- 日期 ----------
+const WD = '日一二三四五六';
+const pad = (n) => String(n).padStart(2, '0');
+const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const parseYmd = (s) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+const addDays = (s, n) => { const d = parseYmd(s); d.setDate(d.getDate() + n); return ymd(d); };
+const longLabel = (s) => { const d = parseYmd(s); return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 星期${WD[d.getDay()]}`; };
+const shortLabel = (s) => { const d = parseYmd(s); return `${d.getMonth() + 1}/${d.getDate()}（${WD[d.getDay()]}）`; };
+const slashDate = (s) => { const d = parseYmd(s); return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`; };
+function initialDate() { const n = new Date(); if (n.getHours() < 5) n.setDate(n.getDate() - 1); return ymd(n); }
+let day = initialDate();
+
+// ---------- 數字 ----------
+const num = (v) => { const x = parseFloat(String(v ?? '').replace(/,/g, '')); return Number.isFinite(x) ? x : null; };
+const f1 = (x) => x.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const f2 = (x) => x.toFixed(2);
+
+// ---------- 紀錄 ----------
+function blankRecord() {
+  const prev = Object.keys(records).filter((k) => k < day).sort().pop();
+  const p = prev ? records[prev] : null;
+  return {
+    rev: '', cust: '', n88: '',
+    staff: [],
+    beef: p ? [...p.beef] : (cfg?.beef || []).map(() => ''),
+    sea: p ? [...p.sea] : (cfg?.sea || []).map(() => ''),
+    fromPrev: prev || null,
+  };
+}
+let rec;
+function openDay(d) {
+  day = d;
+  rec = records[day] ? structuredClone(records[day]) : blankRecord();
+  renderAll();
+}
+function persist() { records[day] = rec; save(LS.rec, records); }
+
+// ---------- 計算 ----------
+function calcSales() {
+  const rev = num(rec.rev), cust = num(rec.cust), n88 = num(rec.n88);
+  return {
+    net: rev != null ? Math.round(rev / 1.05) : null,
+    avg: rev != null && cust ? Math.round(rev / cust) : null,
+    p88: n88 != null && cust ? Math.round((n88 / cust) * 1000) / 10 : null,
+  };
+}
+const items = (kind) => cfg?.[kind] || [];
+const itemName = (kind, i) => (rec.names?.[kind]?.[i]) || items(kind)[i]?.name || '';
+function amounts(kind) {
+  return items(kind).map((it, i) => { const q = num(rec[kind][i]); return q == null ? 0 : q * it.price; });
+}
+const sum = (a) => a.reduce((s, x) => s + x, 0);
+
+// ---------- 畫面 ----------
+function renderHeader() {
+  $('todayLabel').textContent = longLabel(day);
+  $('tomorrowLabel').textContent = `明日戰力：${longLabel(addDays(day, 1))}`;
+  $('todayShort').textContent = shortLabel(day);
+  $('tmrShort').textContent = shortLabel(addDays(day, 1));
+  $('storeName').textContent = cfg?.store || '南西';
+}
+function renderSales() {
+  $('rev').value = rec.rev; $('cust').value = rec.cust; $('n88').value = rec.n88;
+  renderSalesCalc();
+}
+function renderSalesCalc() {
+  const c = calcSales();
+  $('outNet').textContent = c.net ?? '–';
+  $('outAvg').textContent = c.avg ?? '–';
+  $('out88').textContent = c.p88 != null ? c.p88.toFixed(1) + '%' : '–';
+}
+
+function titleOptions() { return cfg?.titleOptions || DEFAULT_TITLE_OPTIONS; }
+function renderStaff() {
+  const box = $('staffList');
+  box.innerHTML = '';
+  rec.staff.forEach((s, i) => {
+    const h = sheetHours(s.shift);
+    const el = document.createElement('div');
+    el.className = 'staff' + (s.review ? ' review' : '');
+    const opts = ['', ...titleOptions()].map((t) => `<option ${t === s.title ? 'selected' : ''}>${t}</option>`).join('');
+    el.innerHTML = `
+      <div class="r1">
+        <input list="nameList" placeholder="人名" value="${esc(s.name)}" data-k="name">
+        <select data-k="title">${opts}</select>
+        <button data-op="up" aria-label="上移">↑</button><button data-op="del" aria-label="刪除">✕</button>
+      </div>
+      <div class="r2">
+        <input placeholder="時段 例：1100-2000-1(1500-1600)" value="${esc(s.shift)}" data-k="shift" autocapitalize="off" autocomplete="off">
+        <div class="hrs ${h.ok ? '' : 'bad'}">${s.shift ? (h.ok ? h.hours + 'h' : '算不了') : ''}</div>
+      </div>
+      ${s.notes?.length ? `<div class="notes">${s.notes.map(esc).join('<br>')}</div>` : ''}
+      ${s.review ? '<div class="ops"><button data-op="ok">確認沒問題</button></div>' : ''}`;
+    el.querySelectorAll('[data-k]').forEach((inp) => {
+      inp.addEventListener('change', () => {
+        const k = inp.dataset.k;
+        if (k === 'shift') {
+          const n = normalizeShift(inp.value);
+          s.shift = n.ok ? n.text : inp.value.trim();
+          s.notes = n.ok ? n.notes : [...n.notes];
+        } else s[k] = inp.value.trim();
+        if (k === 'title' && s.name) { learnedTitles[s.name] = s.title; save(LS.titles, learnedTitles); }
+        if (k === 'name' && !s.title) s.title = guessTitle(s.name, '');
+        persist(); renderStaff();
+      });
+    });
+    el.querySelectorAll('[data-op]').forEach((b) => b.addEventListener('click', () => {
+      const op = b.dataset.op;
+      if (op === 'del') rec.staff.splice(i, 1);
+      if (op === 'up' && i > 0) [rec.staff[i - 1], rec.staff[i]] = [rec.staff[i], rec.staff[i - 1]];
+      if (op === 'down' && i < rec.staff.length - 1) [rec.staff[i + 1], rec.staff[i]] = [rec.staff[i], rec.staff[i + 1]];
+      if (op === 'ok') { s.review = false; }
+      persist(); renderStaff();
+    }));
+    box.appendChild(el);
+  });
+  const t = totalHours(rec.staff.map((s) => s.shift));
+  $('outHours').textContent = `${t.hours.toFixed(1)} 小時`;
+  const warns = [];
+  if (rec.staff.length > 7) warns.push(`有 ${rec.staff.length} 人，但表單時數公式只算 7 列（第 4～10 列），第 8 人之後不會被算進時數。`);
+  if (!t.ok) warns.push('有時段格式表單算不了（顯示「算不了」），請改成 1100-2000-1(1500-1600) 這種寫法。');
+  const rv = rec.staff.filter((s) => s.review).length;
+  if (rv) warns.push(`有 ${rv} 筆黃色待確認（支援人員或班表寫法特殊），請看過再按「確認沒問題」或刪除。`);
+  const names = cfg?.names || [];
+  const unknown = rec.staff.filter((s) => s.name && names.length && !names.includes(s.name)).map((s) => s.name);
+  if (unknown.length) warns.push(`「${unknown.join('、')}」不在表單人名下拉清單裡，貼上時試算表可能會擋或標紅。`);
+  $('staffWarn').innerHTML = warns.map((w) => `<div class="msg warn">${esc(w)}</div>`).join('');
+}
+
+function renderStock() {
+  for (const kind of ['beef', 'sea']) {
+    const box = $(kind + 'List');
+    box.innerHTML = '';
+    items(kind).forEach((it, i) => {
+      const el = document.createElement('div');
+      el.className = 'stock';
+      el.innerHTML = `
+        <div class="nm">${esc(itemName(kind, i))}<small>${esc(it.unit)}</small></div>
+        <div class="stepper"><button data-d="-1" aria-label="減">−</button><input inputmode="decimal" value="${esc(rec[kind][i] ?? '')}"><button data-d="1" aria-label="加">＋</button></div>
+        <div class="amt" data-amt></div>`;
+      const inp = el.querySelector('input');
+      const step = kind === 'beef' ? 0.1 : 1;
+      inp.addEventListener('input', () => { rec[kind][i] = inp.value.trim(); persist(); renderStockSums(); });
+      el.querySelectorAll('[data-d]').forEach((b) => b.addEventListener('click', () => {
+        const cur = num(inp.value) ?? 0;
+        const nv = Math.max(0, Math.round((cur + step * Number(b.dataset.d)) * 100) / 100);
+        inp.value = String(nv); rec[kind][i] = inp.value; persist(); renderStockSums();
+      }));
+      box.appendChild(el);
+    });
+  }
+  renderStockSums();
+}
+function renderStockSums() {
+  let tot = 0;
+  for (const kind of ['beef', 'sea']) {
+    const a = amounts(kind);
+    $(kind + 'List').querySelectorAll('[data-amt]').forEach((el, i) => { el.textContent = f1(a[i]); });
+    const s = sum(a); tot += s;
+    $(kind + 'Sum').textContent = f1(s);
+  }
+  $('grandSum').textContent = f1(tot);
+}
+
+function renderAll() {
+  renderHeader(); renderSales(); renderStaff(); renderStock();
+  $('fetchMsg').innerHTML = rec.fromPrev && !records[day] ? '' : '';
+  if (!cfg) $('fetchMsg').innerHTML = '<div class="msg err">還沒有設定碼：請按右上角 ⚙︎ 貼上設定碼。</div>';
+  const dl = $('nameList') || Object.assign(document.createElement('datalist'), { id: 'nameList' });
+  dl.innerHTML = (cfg?.names || []).map((n) => `<option value="${esc(n)}">`).join('');
+  document.body.appendChild(dl);
+}
+
+function esc(s) { return String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+let toastT;
+function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), 1800); }
+
+// ---------- 事件：業績 ----------
+for (const k of ['rev', 'cust', 'n88']) {
+  $(k).addEventListener('input', (e) => { rec[k] = e.target.value.replace(/[^\d.]/g, ''); persist(); renderSalesCalc(); });
+}
+$('prevDay').onclick = () => openDay(addDays(day, -1));
+$('nextDay').onclick = () => openDay(addDays(day, 1));
+$('btnAddStaff').onclick = () => { rec.staff.push({ name: '', title: '', shift: '', notes: [], review: false }); persist(); renderStaff(); };
+
+// ---------- 大班表帶入 ----------
+function guessTitle(name, raw) {
+  if (learnedTitles[name]) return learnedTitles[name];
+  if (cfg?.titles?.[name]) return cfg.titles[name];
+  const opts = titleOptions();
+  if (opts.includes(raw)) return raw;
+  if (raw === '打烊班') return '打烊';
+  return '';
+}
+async function fetchTab(tab) {
+  const url = `https://docs.google.com/spreadsheets/d/${cfg.sheetId}/gviz/tq?tqx=out:csv&headers=0&sheet=${encodeURIComponent(tab.name)}`;
+  const r = await fetch(url, { credentials: 'omit', cache: 'no-store' });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const t = await r.text();
+  if (/^\s*</.test(t)) throw new Error('回傳的不是表格（大班表權限可能變了）');
+  return parseCSV(t);
+}
+$('btnFetch').onclick = async () => {
+  if (!cfg) { toast('請先貼上設定碼'); return; }
+  const target = addDays(day, 1);
+  const btn = $('btnFetch'); btn.disabled = true; btn.textContent = '讀取大班表中…';
+  const tried = [];
+  try {
+    let result = null;
+    for (const tab of candidateTabs(target, cfg.tabPattern)) {
+      try {
+        const rows = await fetchTab(tab);
+        const r = extractRoster(rows, tab.year, tab.month, target, cfg.store);
+        tried.push(`${tab.name}：${r.found ? '找到' : r.warnings.join('；')}`);
+        if (r.found) { result = { ...r, tab: tab.name }; break; }
+      } catch (e) { tried.push(`${tab.name}：${e.message}`); }
+    }
+    if (!result) {
+      $('fetchMsg').innerHTML = `<div class="msg err">找不到 ${shortLabel(target)} 的南西班表，請手動輸入。<br><small>${tried.map(esc).join('<br>')}</small></div>`;
+      return;
+    }
+    if (rec.staff.length && !confirm(`要用大班表的內容取代目前的 ${rec.staff.length} 筆人員嗎？`)) return;
+    rec.staff = result.people.map((p) => {
+      const n = normalizeShift(p.shiftRaw);
+      const notes = [...p.notes, ...n.notes];
+      if (p.source !== '大班表') notes.unshift(`來源：${p.source}`);
+      return { name: p.name, title: guessTitle(p.name, p.titleRaw), shift: n.ok ? n.text : String(p.shiftRaw).replace(/\s+/g, ''), notes, review: p.needsReview || !n.ok };
+    });
+    persist(); renderStaff();
+    $('fetchMsg').innerHTML = `<div class="msg ok">已從「${esc(result.tab)}」帶入 ${result.people.length} 人（${shortLabel(target)}）。時段已整理成表單算得了時數的格式。</div>`;
+  } finally { btn.disabled = false; btn.textContent = '從大班表帶入明天的班'; }
+};
+
+// ---------- 產圖 ----------
+function drawSheet() {
+  const colW = [150, 150, 150, 150, 150, 150, 150, 176];
+  const rowH = 46, S = 2;
+  const W = sum(colW), H = rowH * 22;
+  const cv = document.createElement('canvas');
+  cv.width = W * S; cv.height = H * S;
+  const g = cv.getContext('2d');
+  g.scale(S, S);
+  g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
+  const x0 = (c) => sum(colW.slice(0, c));
+  const FONT = '"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
+  const cell = (c1, r1, c2, r2, text, o = {}) => {
+    const x = x0(c1), y = (r1 - 1) * rowH, w = x0(c2 + 1) - x, h = (r2 - r1 + 1) * rowH;
+    if (o.bg) { g.fillStyle = o.bg; g.fillRect(x, y, w, h); }
+    if (o.border !== false) { g.strokeStyle = '#000'; g.lineWidth = o.thick ? 2 : 1; g.strokeRect(x + .5, y + .5, w, h); }
+    if (text != null && text !== '') {
+      let size = o.size || 21;
+      g.font = `${o.bold === false ? 400 : 700} ${size}px ${FONT}`;
+      while (g.measureText(String(text)).width > w - 10 && size > 11) { size -= 1; g.font = `${o.bold === false ? 400 : 700} ${size}px ${FONT}`; }
+      g.fillStyle = o.color || '#000'; g.textBaseline = 'middle';
+      g.textAlign = o.align || 'center';
+      const tx = o.align === 'left' ? x + 8 : o.align === 'right' ? x + w - 8 : x + w / 2;
+      g.fillText(String(text), tx, y + h / 2 + 1);
+    }
+  };
+  const C = { peach: '#fce5cd', rose: '#e6b8af', cream: '#fff2cc', green: '#d9ead3', pink: '#f4cccc', orange: '#ff9900', orange2: '#e69138', blue: '#a4c2f4' };
+  const c = calcSales();
+  const tmr = addDays(day, 1);
+  cell(0, 1, 7, 1, `季樂   -   ${cfg?.store || '南西'}`, { bg: C.peach, size: 26 });
+  cell(0, 2, 2, 2, longLabel(day));
+  cell(3, 2, 4, 2, '每日戰力', { bg: C.rose });
+  cell(5, 2, 7, 2, longLabel(tmr), { bg: C.rose });
+  // 左側業績
+  cell(0, 3, 0, 3, '營業額(含稅)'); cell(1, 3, 1, 3, rec.rev); cell(2, 3, 2, 3, '元', { bg: C.cream });
+  cell(0, 4, 2, 4, '');
+  cell(0, 5, 0, 5, '營業額(未稅)'); cell(1, 5, 1, 5, c.net ?? 0); cell(2, 5, 2, 5, '元', { bg: C.cream });
+  cell(0, 6, 0, 6, ''); cell(1, 6, 1, 6, ''); cell(2, 6, 2, 6, '');
+  cell(0, 7, 0, 7, '來客數'); cell(1, 7, 1, 7, rec.cust); cell(2, 7, 2, 7, '人', { bg: C.cream });
+  cell(0, 8, 0, 8, '平均客單'); cell(1, 8, 1, 8, c.avg ?? ''); cell(2, 8, 2, 8, '元', { bg: C.cream });
+  cell(0, 9, 0, 10, '88私房菜');
+  cell(1, 9, 1, 9, rec.n88); cell(2, 9, 2, 9, '份', { bg: C.cream });
+  cell(1, 10, 1, 10, c.p88 != null ? c.p88.toFixed(1) : '#DIV/0!'); cell(2, 10, 2, 10, '%', { bg: C.cream });
+  const th = totalHours(rec.staff.slice(0, 7).map((s) => s.shift));
+  cell(0, 11, 0, 11, '明日人力總時數', { size: 17 }); cell(1, 11, 1, 11, th.hours.toFixed(1)); cell(2, 11, 2, 11, '小時', { bg: C.cream });
+  // 右側戰力
+  cell(3, 3, 3, 3, '人名'); cell(4, 3, 4, 3, '職稱'); cell(5, 3, 7, 3, '時段');
+  for (let i = 0; i < 8; i++) {
+    const r = 4 + i, s = rec.staff[i] || {};
+    const bg = i % 2 === 0 ? C.green : null;
+    cell(3, r, 3, r, s.name || '', { bg }); cell(4, r, 4, r, s.title || '', { bg }); cell(5, r, 7, r, s.shift || '', { bg });
+  }
+  // 盤點
+  cell(0, 13, 2, 13, `${cfg?.store || '南西'} 牛肉每日盤點`, { bg: C.pink });
+  cell(3, 13, 3, 13, '金額', { bg: C.pink });
+  cell(4, 13, 6, 13, `${cfg?.store || '南西'} 海鮮/雞腿每日盤點`, { bg: C.pink });
+  const ba = amounts('beef'), sa = amounts('sea');
+  for (let i = 0; i < 6; i++) {
+    const r = 14 + i, b = items('beef')[i], s = items('sea')[i];
+    if (b) { const q = num(rec.beef[i]); cell(0, r, 0, r, itemName('beef', i)); cell(1, r, 1, r, q == null ? '' : f2(q)); cell(2, r, 2, r, b.unit); cell(3, r, 3, r, f1(ba[i])); }
+    if (s) { const q = num(rec.sea[i]); cell(4, r, 4, r, itemName('sea', i)); cell(5, r, 5, r, q == null ? '' : f2(q)); cell(6, r, 6, r, s.unit); cell(7, r, 7, r, f1(sa[i])); }
+  }
+  cell(0, 21, 2, 21, '牛肉庫存成本', { bg: C.green });
+  cell(3, 21, 3, 21, f1(sum(ba)), { bg: C.orange });
+  cell(4, 21, 6, 21, '海鮮/雞腿庫存成本', { bg: C.green });
+  cell(7, 21, 7, 21, f1(sum(sa)), { bg: C.orange2 });
+  cell(0, 22, 6, 22, '庫存總成本', { bg: C.blue });
+  cell(7, 22, 7, 22, f1(sum(ba) + sum(sa)), { bg: C.blue });
+  return cv;
+}
+let lastBlob = null;
+$('btnImage').onclick = () => {
+  if (!cfg) { toast('請先貼上設定碼'); return; }
+  const cv = drawSheet();
+  $('imgOut').src = cv.toDataURL('image/png');
+  cv.toBlob((b) => { lastBlob = b; }, 'image/png');
+  $('sheetImage').classList.add('on');
+};
+$('btnShare').onclick = async () => {
+  if (!lastBlob) return;
+  const file = new File([lastBlob], `${cfg?.store || '南西'}戰力_${day}.png`, { type: 'image/png' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file] }); } catch (e) { if (e.name !== 'AbortError') toast('分享失敗：' + e.message); }
+  } else {
+    toast('這個瀏覽器不能直接分享，請長按圖片儲存');
+  }
+};
+
+// ---------- 小抄 ----------
+function pasteSteps() {
+  const c = calcSales();
+  const rows7 = Array.from({ length: 7 }, (_, i) => rec.staff[i] || { name: '', title: '', shift: '' });
+  return [
+    { cell: 'A2', what: '今天日期', text: slashDate(day) },
+    { cell: 'F2', what: '明天日期', text: slashDate(addDays(day, 1)) },
+    { cell: 'B3', what: '營業額(含稅)', text: String(rec.rev ?? '') },
+    { cell: 'B7', what: '來客數／平均客單／88份數（3 格往下）', text: [rec.cust, c.avg ?? '', rec.n88].join('\n') },
+    { cell: 'D4', what: '人名＋職稱（2 欄×7 列，空的會清掉舊資料）', text: rows7.map((s) => `${s.name}\t${s.title}`).join('\n') },
+    { cell: 'F4', what: '時段（7 列）', text: rows7.map((s) => s.shift).join('\n') },
+    { cell: 'B14', what: '牛肉數量（6 格往下）', text: items('beef').map((_, i) => rec.beef[i] ?? '').join('\n') },
+    { cell: 'F14', what: '海鮮/雞腿數量（6 格往下）', text: items('sea').map((_, i) => rec.sea[i] ?? '').join('\n') },
+  ];
+}
+async function copyText(t) {
+  try { await navigator.clipboard.writeText(t); return true; } catch {
+    const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select();
+    const ok = document.execCommand('copy'); ta.remove(); return ok;
+  }
+}
+$('btnPaste').onclick = () => {
+  const box = $('pasteSteps'); box.innerHTML = '';
+  pasteSteps().forEach((st, i) => {
+    const el = document.createElement('div'); el.className = 'step';
+    el.innerHTML = `<div><div class="cell">${i + 1}. 點 <code>${st.cell}</code> 貼上</div><div class="hint">${esc(st.what)}</div><pre>${esc(st.text.replace(/\t/g, '　|　'))}</pre></div><button class="btn primary">複製</button>`;
+    el.querySelector('button').onclick = async () => { if (await copyText(st.text)) { el.classList.add('done'); toast(`已複製，去試算表點 ${st.cell} 貼上`); } else toast('複製失敗'); };
+    box.appendChild(el);
+  });
+  const renamed = ['beef', 'sea'].some((k) => items(k).some((it, i) => itemName(k, i) !== it.name));
+  if (renamed) box.insertAdjacentHTML('beforeend', '<div class="msg warn">你有改過盤點品項名稱，表單 A／E 欄的品名要自己改一次。</div>');
+  $('sheetPaste').classList.add('on');
+};
+
+// ---------- 設定 ----------
+function renderSettings() {
+  $('cfgState').innerHTML = cfg ? `<div class="msg ok">已設定：${esc(cfg.store)}，牛肉 ${cfg.beef.length} 項、海鮮 ${cfg.sea.length} 項</div>` : '<div class="msg err">尚未設定</div>';
+  const box = $('itemNames'); box.innerHTML = '';
+  for (const kind of ['beef', 'sea']) items(kind).forEach((it, i) => {
+    const el = document.createElement('div'); el.className = 'field';
+    el.innerHTML = `<label>${kind === 'beef' ? '牛肉' : '海鮮'} ${i + 1}</label><input value="${esc(itemName(kind, i))}"><span class="u">${esc(it.unit)}</span>`;
+    el.querySelector('input').onchange = (e) => {
+      rec.names = rec.names || {}; rec.names[kind] = rec.names[kind] || [];
+      rec.names[kind][i] = e.target.value.trim(); persist(); renderStock();
+    };
+    box.appendChild(el);
+  });
+}
+$('btnSettings').onclick = () => { renderSettings(); $('sheetSettings').classList.add('on'); };
+$('btnApplyCfg').onclick = () => {
+  try {
+    const raw = $('cfgInput').value.trim();
+    const json = new TextDecoder().decode(Uint8Array.from(atob(raw.replace(/\s+/g, '')), (ch) => ch.charCodeAt(0)));
+    const c = JSON.parse(json);
+    if (!c.sheetId || !Array.isArray(c.beef) || !Array.isArray(c.sea)) throw new Error('內容不完整');
+    cfg = c; save(LS.cfg, cfg); $('cfgInput').value = '';
+    openDay(day); renderSettings(); toast('設定完成');
+  } catch (e) { toast('設定碼不正確：' + e.message); }
+};
+$('btnExport').onclick = async () => {
+  const data = JSON.stringify({ records, learnedTitles });
+  $('backupBox').value = data;
+  toast((await copyText(data)) ? '備份已複製，可貼到 LINE 記事本保存' : '請手動複製下方文字');
+};
+$('btnImport').onclick = () => {
+  try {
+    const d = JSON.parse($('backupBox').value);
+    if (!d.records) throw new Error('格式不對');
+    if (!confirm('還原會覆蓋這支手機上的紀錄，確定？')) return;
+    records = d.records; learnedTitles = d.learnedTitles || {};
+    save(LS.rec, records); save(LS.titles, learnedTitles); openDay(day); toast('已還原');
+  } catch (e) { toast('還原失敗：' + e.message); }
+};
+document.querySelectorAll('[data-close]').forEach((b) => b.onclick = () => b.closest('.sheet').classList.remove('on'));
+document.querySelectorAll('.sheet').forEach((s) => s.addEventListener('click', (e) => { if (e.target === s) s.classList.remove('on'); }));
+
+openDay(day);
+</script>
+</body>
+</html>

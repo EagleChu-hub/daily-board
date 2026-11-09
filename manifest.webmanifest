@@ -1,0 +1,10 @@
+{
+  "name": "每日戰力",
+  "short_name": "每日戰力",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f3ef",
+  "theme_color": "#fce5cd",
+  "lang": "zh-Hant-TW"
+}
