@@ -96,12 +96,24 @@
   .toast { position: fixed; left: 50%; bottom: calc(100px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: #333; color: #fff;
     padding: 10px 16px; border-radius: 20px; font-size: 15px; z-index: 20; opacity: 0; transition: opacity .2s; pointer-events: none; }
   .toast.on { opacity: .95; }
+  .storesw { display: inline-flex; background: #fff8; border-radius: 10px; padding: 3px; margin-left: 8px; vertical-align: middle; }
+  .storesw button { border: 0; background: transparent; font: inherit; font-size: 15px; font-weight: 700; padding: 4px 12px; border-radius: 8px; color: #6b5640; }
+  .storesw button.on { background: var(--accent); color: #fff; }
+  .stock .prev { grid-column: 1 / -1; font-size: 12px; color: var(--mute); margin-top: -4px; text-align: right; }
+  .stock .tag { font-size: 11px; color: #a05a00; }
+  .hist { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .hist td, .hist th { padding: 8px 4px; border-bottom: 1px solid var(--line); text-align: right; }
+  .hist td:first-child, .hist th:first-child { text-align: left; }
+  .hist tr.cur { background: var(--cream); }
+  .hist tr { cursor: pointer; }
+  footer { grid-template-columns: 1fr 1.2fr 1fr; }
+  .sendstate { font-size: 13px; text-align: center; margin: -4px 0 0; }
 </style>
 </head>
 <body>
 <header>
   <div class="titlebar">
-    <h1><span id="storeName">南西</span> 每日戰力<span class="trial">試用版</span></h1>
+    <h1>每日戰力<span class="storesw" id="storeSw"></span><span class="trial">試用版</span></h1>
     <button class="iconbtn" id="btnSettings" aria-label="設定">⚙︎</button>
   </div>
   <div class="datenav">
@@ -137,7 +149,8 @@
   </section>
 
   <section class="card">
-    <h2>盤點 <small>預設帶入上一次的數量</small></h2>
+    <h2>盤點 <button class="btn" id="btnHistory" style="padding:6px 12px;font-size:14px">看歷史</button></h2>
+    <p class="hint" style="margin:-4px 0 10px">牛排、燒肉、肉片每天重新盤；其他帶入這家店上一次的數量。</p>
     <div class="seg">牛肉</div>
     <div id="beefList"></div>
     <div class="sub"><span>牛肉庫存成本</span><span id="beefSum">0.0</span></div>
@@ -151,9 +164,27 @@
 </main>
 
 <footer>
-  <button class="btn primary" id="btnImage">產生 LINE 圖</button>
-  <button class="btn" id="btnPaste">填表單小抄</button>
+  <button class="btn" id="btnImage">LINE 圖</button>
+  <button class="btn primary" id="btnSubmit">送出到戰力檔</button>
+  <button class="btn" id="btnPaste">小抄</button>
 </footer>
+
+<!-- 歷史 -->
+<div class="sheet" id="sheetHistory"><div class="panel">
+  <h3><span id="histTitle">歷史</span> <button class="iconbtn" data-close>✕</button></h3>
+  <p class="hint">點一列跳到那一天。只顯示這支手機上有填過的日子。</p>
+  <div id="histBody"></div>
+</div></div>
+
+<!-- 送出狀態 -->
+<div class="sheet" id="sheetSubmit"><div class="panel">
+  <h3>送出到戰力檔 <button class="iconbtn" data-close>✕</button></h3>
+  <div id="submitBody"></div>
+  <div class="row" style="margin-top:10px">
+    <button class="btn" id="btnRecheck" style="flex:1">重新查詢狀態</button>
+  </div>
+  <p class="hint">送出後由電腦上的填表機器人逐格填進 Google 戰力檔；填之前會先檢查欄位有沒有被人移動，有問題會一格都不填並在這裡說明。電腦沒開時會排隊，開機後補填。</p>
+</div></div>
 
 <!-- 圖片 -->
 <div class="sheet" id="sheetImage"><div class="panel">
@@ -194,16 +225,20 @@
 
 <script type="module">
 import { sheetHours, totalHours, normalizeShift, parseCSV, extractRoster, candidateTabs } from './lib/hours.js';
+import { migrateConfig, migrateRecords, recKey, prevRecords, carryStock, buildSubmitPayload, validateForSubmit } from './lib/store.js';
 
 const $ = (id) => document.getElementById(id);
-const LS = { cfg: 'nx.cfg', rec: 'nx.records', titles: 'nx.titles' };
+const LS = { cfg: 'nx.cfg', rec: 'nx.records', titles: 'nx.titles', store: 'nx.store' };
 const load = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { toast('儲存失敗（手機空間或隱私模式？）'); } };
 
 const DEFAULT_TITLE_OPTIONS = ['執行長', '區經理', '店長', '師傅', '內計時', '外計時', '打烊', '支援', '六小正', '正職'];
-let cfg = load(LS.cfg, null);
-let records = load(LS.rec, {});
+let cfg = migrateConfig(load(LS.cfg, null));
+let records = migrateRecords(load(LS.rec, {}));
+save(LS.rec, records);
 let learnedTitles = load(LS.titles, {});
+let store = load(LS.store, null) || cfg?.defaultStore || '南西';
+const scfg = () => cfg?.stores?.[store] || null;
 
 // ---------- 日期 ----------
 const WD = '日一二三四五六';
@@ -213,6 +248,7 @@ const parseYmd = (s) => { const [y, m, d] = s.split('-').map(Number); return new
 const addDays = (s, n) => { const d = parseYmd(s); d.setDate(d.getDate() + n); return ymd(d); };
 const longLabel = (s) => { const d = parseYmd(s); return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 星期${WD[d.getDay()]}`; };
 const shortLabel = (s) => { const d = parseYmd(s); return `${d.getMonth() + 1}/${d.getDate()}（${WD[d.getDay()]}）`; };
+const md = (s) => { const d = parseYmd(s); return `${d.getMonth() + 1}/${d.getDate()}`; };
 const slashDate = (s) => { const d = parseYmd(s); return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`; };
 function initialDate() { const n = new Date(); if (n.getHours() < 5) n.setDate(n.getDate() - 1); return ymd(n); }
 let day = initialDate();
@@ -221,26 +257,26 @@ let day = initialDate();
 const num = (v) => { const x = parseFloat(String(v ?? '').replace(/,/g, '')); return Number.isFinite(x) ? x : null; };
 const f1 = (x) => x.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const f2 = (x) => x.toFixed(2);
+const sum = (a) => a.reduce((s, x) => s + x, 0);
 
 // ---------- 紀錄 ----------
+let rec;
 function blankRecord() {
-  const prev = Object.keys(records).filter((k) => k < day).sort().pop();
-  const p = prev ? records[prev] : null;
+  const sc = scfg();
   return {
-    rev: '', cust: '', n88: '',
-    staff: [],
-    beef: p ? [...p.beef] : (cfg?.beef || []).map(() => ''),
-    sea: p ? [...p.sea] : (cfg?.sea || []).map(() => ''),
-    fromPrev: prev || null,
+    rev: '', cust: '', n88: '', staff: [],
+    beef: carryStock(records, store, day, 'beef', sc?.beef || []),
+    sea: carryStock(records, store, day, 'sea', sc?.sea || []),
   };
 }
-let rec;
 function openDay(d) {
   day = d;
-  rec = records[day] ? structuredClone(records[day]) : blankRecord();
+  const k = recKey(store, day);
+  rec = records[k] ? structuredClone(records[k]) : blankRecord();
   renderAll();
 }
-function persist() { records[day] = rec; save(LS.rec, records); }
+function persist() { records[recKey(store, day)] = rec; save(LS.rec, records); }
+function switchStore(s) { store = s; save(LS.store, store); $('fetchMsg').innerHTML = ''; openDay(day); }
 
 // ---------- 計算 ----------
 function calcSales() {
@@ -251,12 +287,11 @@ function calcSales() {
     p88: n88 != null && cust ? Math.round((n88 / cust) * 1000) / 10 : null,
   };
 }
-const items = (kind) => cfg?.[kind] || [];
+const items = (kind) => scfg()?.[kind] || [];
 const itemName = (kind, i) => (rec.names?.[kind]?.[i]) || items(kind)[i]?.name || '';
-function amounts(kind) {
-  return items(kind).map((it, i) => { const q = num(rec[kind][i]); return q == null ? 0 : q * it.price; });
+function amounts(kind, r = rec) {
+  return items(kind).map((it, i) => { const q = num(r[kind]?.[i]); return q == null ? 0 : q * it.price; });
 }
-const sum = (a) => a.reduce((s, x) => s + x, 0);
 
 // ---------- 畫面 ----------
 function renderHeader() {
@@ -264,7 +299,9 @@ function renderHeader() {
   $('tomorrowLabel').textContent = `明日戰力：${longLabel(addDays(day, 1))}`;
   $('todayShort').textContent = shortLabel(day);
   $('tmrShort').textContent = shortLabel(addDays(day, 1));
-  $('storeName').textContent = cfg?.store || '南西';
+  const names = Object.keys(cfg?.stores || { 南西: 1 });
+  $('storeSw').innerHTML = names.map((n) => `<button data-store="${esc(n)}" class="${n === store ? 'on' : ''}">${esc(n)}</button>`).join('');
+  $('storeSw').querySelectorAll('button').forEach((b) => b.onclick = () => { if (b.dataset.store !== store) switchStore(b.dataset.store); });
 }
 function renderSales() {
   $('rev').value = rec.rev; $('cust').value = rec.cust; $('n88').value = rec.n88;
@@ -277,7 +314,7 @@ function renderSalesCalc() {
   $('out88').textContent = c.p88 != null ? c.p88.toFixed(1) + '%' : '–';
 }
 
-function titleOptions() { return cfg?.titleOptions || DEFAULT_TITLE_OPTIONS; }
+function titleOptions() { return scfg()?.titleOptions || DEFAULT_TITLE_OPTIONS; }
 function renderStaff() {
   const box = $('staffList');
   box.innerHTML = '';
@@ -304,9 +341,9 @@ function renderStaff() {
         if (k === 'shift') {
           const n = normalizeShift(inp.value);
           s.shift = n.ok ? n.text : inp.value.trim();
-          s.notes = n.ok ? n.notes : [...n.notes];
+          s.notes = [...n.notes];
         } else s[k] = inp.value.trim();
-        if (k === 'title' && s.name) { learnedTitles[s.name] = s.title; save(LS.titles, learnedTitles); }
+        if (k === 'title' && s.name) { learnedTitles[`${store}|${s.name}`] = s.title; save(LS.titles, learnedTitles); }
         if (k === 'name' && !s.title) s.title = guessTitle(s.name, '');
         persist(); renderStaff();
       });
@@ -315,8 +352,7 @@ function renderStaff() {
       const op = b.dataset.op;
       if (op === 'del') rec.staff.splice(i, 1);
       if (op === 'up' && i > 0) [rec.staff[i - 1], rec.staff[i]] = [rec.staff[i], rec.staff[i - 1]];
-      if (op === 'down' && i < rec.staff.length - 1) [rec.staff[i + 1], rec.staff[i]] = [rec.staff[i], rec.staff[i + 1]];
-      if (op === 'ok') { s.review = false; }
+      if (op === 'ok') s.review = false;
       persist(); renderStaff();
     }));
     box.appendChild(el);
@@ -324,16 +360,21 @@ function renderStaff() {
   const t = totalHours(rec.staff.map((s) => s.shift));
   $('outHours').textContent = `${t.hours.toFixed(1)} 小時`;
   const warns = [];
-  if (rec.staff.length > 7) warns.push(`有 ${rec.staff.length} 人，但表單時數公式只算 7 列（第 4～10 列），第 8 人之後不會被算進時數。`);
+  if (rec.staff.length > 7) warns.push(`有 ${rec.staff.length} 人，但表單時數公式只算 7 列（第 4～10 列），第 8 人之後不會被算進時數，也不能送出。`);
   if (!t.ok) warns.push('有時段格式表單算不了（顯示「算不了」），請改成 1100-2000-1(1500-1600) 這種寫法。');
   const rv = rec.staff.filter((s) => s.review).length;
   if (rv) warns.push(`有 ${rv} 筆黃色待確認（支援人員或班表寫法特殊），請看過再按「確認沒問題」或刪除。`);
-  const names = cfg?.names || [];
+  const names = scfg()?.names || [];
   const unknown = rec.staff.filter((s) => s.name && names.length && !names.includes(s.name)).map((s) => s.name);
-  if (unknown.length) warns.push(`「${unknown.join('、')}」不在表單人名下拉清單裡，貼上時試算表可能會擋或標紅。`);
+  if (unknown.length) warns.push(`「${unknown.join('、')}」不在${store}分頁的人名下拉清單裡，試算表可能會擋。`);
   $('staffWarn').innerHTML = warns.map((w) => `<div class="msg warn">${esc(w)}</div>`).join('');
 }
 
+function prevText(kind, i) {
+  const ps = prevRecords(records, store, day).filter((p) => num(p.rec[kind]?.[i]) != null).slice(0, 2);
+  if (!ps.length) return '';
+  return ps.map((p, j) => `${j ? '前次' : '上次'} ${md(p.date)}：${p.rec[kind][i]}`).join('　');
+}
 function renderStock() {
   for (const kind of ['beef', 'sea']) {
     const box = $(kind + 'List');
@@ -342,9 +383,10 @@ function renderStock() {
       const el = document.createElement('div');
       el.className = 'stock';
       el.innerHTML = `
-        <div class="nm">${esc(itemName(kind, i))}<small>${esc(it.unit)}</small></div>
+        <div class="nm">${esc(itemName(kind, i))}<small>${esc(it.unit)}${it.carry === false ? ' <span class="tag">每天重盤</span>' : ''}</small></div>
         <div class="stepper"><button data-d="-1" aria-label="減">−</button><input inputmode="decimal" value="${esc(rec[kind][i] ?? '')}"><button data-d="1" aria-label="加">＋</button></div>
-        <div class="amt" data-amt></div>`;
+        <div class="amt" data-amt></div>
+        <div class="prev">${esc(prevText(kind, i))}</div>`;
       const inp = el.querySelector('input');
       const step = kind === 'beef' ? 0.1 : 1;
       inp.addEventListener('input', () => { rec[kind][i] = inp.value.trim(); persist(); renderStockSums(); });
@@ -371,29 +413,28 @@ function renderStockSums() {
 
 function renderAll() {
   renderHeader(); renderSales(); renderStaff(); renderStock();
-  $('fetchMsg').innerHTML = rec.fromPrev && !records[day] ? '' : '';
   if (!cfg) $('fetchMsg').innerHTML = '<div class="msg err">還沒有設定碼：請按右上角 ⚙︎ 貼上設定碼。</div>';
   const dl = $('nameList') || Object.assign(document.createElement('datalist'), { id: 'nameList' });
-  dl.innerHTML = (cfg?.names || []).map((n) => `<option value="${esc(n)}">`).join('');
+  dl.innerHTML = (scfg()?.names || []).map((n) => `<option value="${esc(n)}">`).join('');
   document.body.appendChild(dl);
 }
 
 function esc(s) { return String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 let toastT;
-function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), 1800); }
+function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), 2000); }
 
 // ---------- 事件：業績 ----------
 for (const k of ['rev', 'cust', 'n88']) {
   $(k).addEventListener('input', (e) => { rec[k] = e.target.value.replace(/[^\d.]/g, ''); persist(); renderSalesCalc(); });
 }
-$('prevDay').onclick = () => openDay(addDays(day, -1));
-$('nextDay').onclick = () => openDay(addDays(day, 1));
+$('prevDay').onclick = () => { $('fetchMsg').innerHTML = ''; openDay(addDays(day, -1)); };
+$('nextDay').onclick = () => { $('fetchMsg').innerHTML = ''; openDay(addDays(day, 1)); };
 $('btnAddStaff').onclick = () => { rec.staff.push({ name: '', title: '', shift: '', notes: [], review: false }); persist(); renderStaff(); };
 
 // ---------- 大班表帶入 ----------
 function guessTitle(name, raw) {
-  if (learnedTitles[name]) return learnedTitles[name];
-  if (cfg?.titles?.[name]) return cfg.titles[name];
+  if (learnedTitles[`${store}|${name}`]) return learnedTitles[`${store}|${name}`];
+  if (scfg()?.titles?.[name]) return scfg().titles[name];
   const opts = titleOptions();
   if (opts.includes(raw)) return raw;
   if (raw === '打烊班') return '打烊';
@@ -417,13 +458,13 @@ $('btnFetch').onclick = async () => {
     for (const tab of candidateTabs(target, cfg.tabPattern)) {
       try {
         const rows = await fetchTab(tab);
-        const r = extractRoster(rows, tab.year, tab.month, target, cfg.store);
+        const r = extractRoster(rows, tab.year, tab.month, target, store);
         tried.push(`${tab.name}：${r.found ? '找到' : r.warnings.join('；')}`);
         if (r.found) { result = { ...r, tab: tab.name }; break; }
       } catch (e) { tried.push(`${tab.name}：${e.message}`); }
     }
     if (!result) {
-      $('fetchMsg').innerHTML = `<div class="msg err">找不到 ${shortLabel(target)} 的南西班表，請手動輸入。<br><small>${tried.map(esc).join('<br>')}</small></div>`;
+      $('fetchMsg').innerHTML = `<div class="msg err">找不到 ${shortLabel(target)} 的${esc(store)}班表，請手動輸入。<br><small>${tried.map(esc).join('<br>')}</small></div>`;
       return;
     }
     if (rec.staff.length && !confirm(`要用大班表的內容取代目前的 ${rec.staff.length} 筆人員嗎？`)) return;
@@ -431,10 +472,11 @@ $('btnFetch').onclick = async () => {
       const n = normalizeShift(p.shiftRaw);
       const notes = [...p.notes, ...n.notes];
       if (p.source !== '大班表') notes.unshift(`來源：${p.source}`);
-      return { name: p.name, title: guessTitle(p.name, p.titleRaw), shift: n.ok ? n.text : String(p.shiftRaw).replace(/\s+/g, ''), notes, review: p.needsReview || !n.ok };
+      const oddTail = n.notes.some((t) => t.startsWith('已移除附註'));
+      return { name: p.name, title: guessTitle(p.name, p.titleRaw), shift: n.ok ? n.text : String(p.shiftRaw).replace(/\s+/g, ''), notes, review: p.needsReview || !n.ok || oddTail };
     });
     persist(); renderStaff();
-    $('fetchMsg').innerHTML = `<div class="msg ok">已從「${esc(result.tab)}」帶入 ${result.people.length} 人（${shortLabel(target)}）。時段已整理成表單算得了時數的格式。</div>`;
+    $('fetchMsg').innerHTML = `<div class="msg ok">已從「${esc(result.tab)}」帶入${esc(store)} ${result.people.length} 人（${shortLabel(target)}）。時段已整理成表單算得了時數的格式。</div>`;
   } finally { btn.disabled = false; btn.textContent = '從大班表帶入明天的班'; }
 };
 
@@ -453,25 +495,22 @@ function drawSheet() {
   const cell = (c1, r1, c2, r2, text, o = {}) => {
     const x = x0(c1), y = (r1 - 1) * rowH, w = x0(c2 + 1) - x, h = (r2 - r1 + 1) * rowH;
     if (o.bg) { g.fillStyle = o.bg; g.fillRect(x, y, w, h); }
-    if (o.border !== false) { g.strokeStyle = '#000'; g.lineWidth = o.thick ? 2 : 1; g.strokeRect(x + .5, y + .5, w, h); }
+    g.strokeStyle = '#000'; g.lineWidth = 1; g.strokeRect(x + .5, y + .5, w, h);
     if (text != null && text !== '') {
       let size = o.size || 21;
-      g.font = `${o.bold === false ? 400 : 700} ${size}px ${FONT}`;
-      while (g.measureText(String(text)).width > w - 10 && size > 11) { size -= 1; g.font = `${o.bold === false ? 400 : 700} ${size}px ${FONT}`; }
-      g.fillStyle = o.color || '#000'; g.textBaseline = 'middle';
-      g.textAlign = o.align || 'center';
-      const tx = o.align === 'left' ? x + 8 : o.align === 'right' ? x + w - 8 : x + w / 2;
-      g.fillText(String(text), tx, y + h / 2 + 1);
+      g.font = `700 ${size}px ${FONT}`;
+      while (g.measureText(String(text)).width > w - 10 && size > 11) { size -= 1; g.font = `700 ${size}px ${FONT}`; }
+      g.fillStyle = '#000'; g.textBaseline = 'middle'; g.textAlign = 'center';
+      g.fillText(String(text), x + w / 2, y + h / 2 + 1);
     }
   };
   const C = { peach: '#fce5cd', rose: '#e6b8af', cream: '#fff2cc', green: '#d9ead3', pink: '#f4cccc', orange: '#ff9900', orange2: '#e69138', blue: '#a4c2f4' };
   const c = calcSales();
   const tmr = addDays(day, 1);
-  cell(0, 1, 7, 1, `季樂   -   ${cfg?.store || '南西'}`, { bg: C.peach, size: 26 });
+  cell(0, 1, 7, 1, `季樂   -   ${store}`, { bg: C.peach, size: 26 });
   cell(0, 2, 2, 2, longLabel(day));
   cell(3, 2, 4, 2, '每日戰力', { bg: C.rose });
   cell(5, 2, 7, 2, longLabel(tmr), { bg: C.rose });
-  // 左側業績
   cell(0, 3, 0, 3, '營業額(含稅)'); cell(1, 3, 1, 3, rec.rev); cell(2, 3, 2, 3, '元', { bg: C.cream });
   cell(0, 4, 2, 4, '');
   cell(0, 5, 0, 5, '營業額(未稅)'); cell(1, 5, 1, 5, c.net ?? 0); cell(2, 5, 2, 5, '元', { bg: C.cream });
@@ -483,17 +522,16 @@ function drawSheet() {
   cell(1, 10, 1, 10, c.p88 != null ? c.p88.toFixed(1) : '#DIV/0!'); cell(2, 10, 2, 10, '%', { bg: C.cream });
   const th = totalHours(rec.staff.slice(0, 7).map((s) => s.shift));
   cell(0, 11, 0, 11, '明日人力總時數', { size: 17 }); cell(1, 11, 1, 11, th.hours.toFixed(1)); cell(2, 11, 2, 11, '小時', { bg: C.cream });
-  // 右側戰力
   cell(3, 3, 3, 3, '人名'); cell(4, 3, 4, 3, '職稱'); cell(5, 3, 7, 3, '時段');
   for (let i = 0; i < 8; i++) {
     const r = 4 + i, s = rec.staff[i] || {};
     const bg = i % 2 === 0 ? C.green : null;
     cell(3, r, 3, r, s.name || '', { bg }); cell(4, r, 4, r, s.title || '', { bg }); cell(5, r, 7, r, s.shift || '', { bg });
   }
-  // 盤點
-  cell(0, 13, 2, 13, `${cfg?.store || '南西'} 牛肉每日盤點`, { bg: C.pink });
+  cell(0, 13, 2, 13, `${store} 牛肉每日盤點`, { bg: C.pink });
   cell(3, 13, 3, 13, '金額', { bg: C.pink });
-  cell(4, 13, 6, 13, `${cfg?.store || '南西'} 海鮮/雞腿每日盤點`, { bg: C.pink });
+  cell(4, 13, 6, 13, `${store} 海鮮/雞腿每日盤點`, { bg: C.pink });
+  cell(7, 13, 7, 13, '金額', { bg: C.pink });
   const ba = amounts('beef'), sa = amounts('sea');
   for (let i = 0; i < 6; i++) {
     const r = 14 + i, b = items('beef')[i], s = items('sea')[i];
@@ -518,20 +556,79 @@ $('btnImage').onclick = () => {
 };
 $('btnShare').onclick = async () => {
   if (!lastBlob) return;
-  const file = new File([lastBlob], `${cfg?.store || '南西'}戰力_${day}.png`, { type: 'image/png' });
+  const file = new File([lastBlob], `${store}戰力_${day}.png`, { type: 'image/png' });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try { await navigator.share({ files: [file] }); } catch (e) { if (e.name !== 'AbortError') toast('分享失敗：' + e.message); }
-  } else {
-    toast('這個瀏覽器不能直接分享，請長按圖片儲存');
-  }
+  } else toast('這個瀏覽器不能直接分享，請長按圖片儲存');
 };
+
+// ---------- 歷史 ----------
+$('btnHistory').onclick = () => {
+  const list = prevRecords(records, store, '9999-12-31');
+  $('histTitle').textContent = `${store} 歷史`;
+  if (!list.length) { $('histBody').innerHTML = '<p class="hint">還沒有紀錄。</p>'; }
+  else {
+    $('histBody').innerHTML = `<table class="hist"><tr><th>日期</th><th>含稅</th><th>來客</th><th>庫存成本</th><th>送出</th></tr>${
+      list.map((p) => {
+        const tot = sum(amounts('beef', p.rec)) + sum(amounts('sea', p.rec));
+        const st = { done: '✓', failed: '✗', pending: '…', working: '…', superseded: '–' }[p.rec.submit?.status] || '';
+        return `<tr data-d="${p.date}" class="${p.date === day ? 'cur' : ''}"><td>${shortLabel(p.date)}</td><td>${esc(p.rec.rev || '–')}</td><td>${esc(p.rec.cust || '–')}</td><td>${f1(tot)}</td><td>${st}</td></tr>`;
+      }).join('')}</table>`;
+    $('histBody').querySelectorAll('tr[data-d]').forEach((tr) => tr.onclick = () => { $('sheetHistory').classList.remove('on'); $('fetchMsg').innerHTML = ''; openDay(tr.dataset.d); });
+  }
+  $('sheetHistory').classList.add('on');
+};
+
+// ---------- 送出 ----------
+const STATUS_TEXT = { pending: '排隊中，等電腦上的機器人來填', working: '機器人正在填寫…', done: '已填入戰力檔 ✓', failed: '填寫失敗', superseded: '已被之後送出的資料取代（不會填）' };
+function renderSubmit(extra = '') {
+  const s = rec.submit;
+  let html = extra;
+  if (s) {
+    const cls = s.status === 'done' ? 'ok' : s.status === 'failed' ? 'err' : 'warn';
+    html += `<div class="msg ${cls}"><b>${esc(STATUS_TEXT[s.status] || s.status)}</b><br><small>送出時間：${esc(new Date(s.at).toLocaleString('zh-TW'))}</small>${s.message ? `<br>${esc(s.message)}` : ''}</div>`;
+    if (s.status === 'failed') html += '<div class="msg warn">可以先改用「小抄」手動貼上，並把這段訊息截圖給我。</div>';
+  } else if (!extra) html += '<p class="hint">這一天還沒送出。</p>';
+  $('submitBody').innerHTML = html;
+}
+let pollT;
+async function pollStatus(times = 60) {
+  clearTimeout(pollT);
+  const s = rec.submit; if (!s?.id || !cfg?.submitUrl) return;
+  const myKey = recKey(store, day);
+  try {
+    const u = `${cfg.submitUrl}?action=status&key=${encodeURIComponent(cfg.submitKey)}&id=${encodeURIComponent(s.id)}`;
+    const r = await (await fetch(u, { cache: 'no-store' })).json();
+    if (recKey(store, day) !== myKey) return;
+    if (r.ok) { s.status = r.status; s.message = r.message || ''; persist(); renderSubmit(); }
+  } catch (e) { /* 網路不穩，下一輪再試 */ }
+  if (['pending', 'working'].includes(s.status) && times > 1 && $('sheetSubmit').classList.contains('on')) pollT = setTimeout(() => pollStatus(times - 1), 5000);
+}
+$('btnSubmit').onclick = async () => {
+  if (!cfg) { toast('請先貼上設定碼'); return; }
+  if (!cfg.submitUrl) { toast('設定碼沒有送出網址，請更新設定碼'); return; }
+  const problems = validateForSubmit(rec, scfg());
+  $('sheetSubmit').classList.add('on');
+  if (problems.length) { renderSubmit(`<div class="msg err"><b>還不能送出：</b><br>${problems.map(esc).join('<br>')}</div>`); return; }
+  if (rec.submit && ['pending', 'working', 'done'].includes(rec.submit.status) && !confirm('這一天已經送出過，要用目前的內容再送一次嗎？')) { renderSubmit(); pollStatus(); return; }
+  renderSubmit('<div class="msg warn">送出中…</div>');
+  try {
+    const payload = buildSubmitPayload({ store, day, rec, scfg: scfg(), avg: calcSales().avg, slash: slashDate, itemName });
+    const r = await (await fetch(cfg.submitUrl, { method: 'POST', body: JSON.stringify({ action: 'submit', key: cfg.submitKey, store, date: day, payload }) })).json();
+    if (!r.ok) throw new Error(r.error || '伺服器拒絕');
+    rec.submit = { id: r.id, status: 'pending', at: Date.now(), message: '' };
+    persist(); renderSubmit(); pollStatus();
+  } catch (e) { renderSubmit(`<div class="msg err">送出失敗：${esc(e.message)}。請確認網路，或改用小抄。</div>`); }
+};
+$('btnRecheck').onclick = () => { renderSubmit(); pollStatus(); };
 
 // ---------- 小抄 ----------
 function pasteSteps() {
   const c = calcSales();
   const rows7 = Array.from({ length: 7 }, (_, i) => rec.staff[i] || { name: '', title: '', shift: '' });
-  return [
-    { cell: 'A2', what: '今天日期', text: slashDate(day) },
+  const steps = [];
+  if (!scfg()?.dateCellIsFormula) steps.push({ cell: 'A2', what: '今天日期', text: slashDate(day) });
+  steps.push(
     { cell: 'F2', what: '明天日期', text: slashDate(addDays(day, 1)) },
     { cell: 'B3', what: '營業額(含稅)', text: String(rec.rev ?? '') },
     { cell: 'B7', what: '來客數／平均客單／88份數（3 格往下）', text: [rec.cust, c.avg ?? '', rec.n88].join('\n') },
@@ -539,7 +636,8 @@ function pasteSteps() {
     { cell: 'F4', what: '時段（7 列）', text: rows7.map((s) => s.shift).join('\n') },
     { cell: 'B14', what: '牛肉數量（6 格往下）', text: items('beef').map((_, i) => rec.beef[i] ?? '').join('\n') },
     { cell: 'F14', what: '海鮮/雞腿數量（6 格往下）', text: items('sea').map((_, i) => rec.sea[i] ?? '').join('\n') },
-  ];
+  );
+  return steps;
 }
 async function copyText(t) {
   try { await navigator.clipboard.writeText(t); return true; } catch {
@@ -548,7 +646,7 @@ async function copyText(t) {
   }
 }
 $('btnPaste').onclick = () => {
-  const box = $('pasteSteps'); box.innerHTML = '';
+  const box = $('pasteSteps'); box.innerHTML = `<p class="hint">目前是 <b>${esc(store)}</b> 分頁。</p>`;
   pasteSteps().forEach((st, i) => {
     const el = document.createElement('div'); el.className = 'step';
     el.innerHTML = `<div><div class="cell">${i + 1}. 點 <code>${st.cell}</code> 貼上</div><div class="hint">${esc(st.what)}</div><pre>${esc(st.text.replace(/\t/g, '　|　'))}</pre></div><button class="btn primary">複製</button>`;
@@ -562,8 +660,9 @@ $('btnPaste').onclick = () => {
 
 // ---------- 設定 ----------
 function renderSettings() {
-  $('cfgState').innerHTML = cfg ? `<div class="msg ok">已設定：${esc(cfg.store)}，牛肉 ${cfg.beef.length} 項、海鮮 ${cfg.sea.length} 項</div>` : '<div class="msg err">尚未設定</div>';
-  const box = $('itemNames'); box.innerHTML = '';
+  const ss = cfg ? Object.entries(cfg.stores).map(([n, s]) => `${n}（牛肉 ${s.beef.length}、海鮮 ${s.sea.length}）`).join('、') : '';
+  $('cfgState').innerHTML = cfg ? `<div class="msg ok">已設定：${esc(ss)}${cfg.submitUrl ? '，送出已啟用' : '，<b>送出未啟用</b>'}</div>` : '<div class="msg err">尚未設定</div>';
+  const box = $('itemNames'); box.innerHTML = `<p class="hint">目前是 <b>${esc(store)}</b>。</p>`;
   for (const kind of ['beef', 'sea']) items(kind).forEach((it, i) => {
     const el = document.createElement('div'); el.className = 'field';
     el.innerHTML = `<label>${kind === 'beef' ? '牛肉' : '海鮮'} ${i + 1}</label><input value="${esc(itemName(kind, i))}"><span class="u">${esc(it.unit)}</span>`;
@@ -579,9 +678,10 @@ $('btnApplyCfg').onclick = () => {
   try {
     const raw = $('cfgInput').value.trim();
     const json = new TextDecoder().decode(Uint8Array.from(atob(raw.replace(/\s+/g, '')), (ch) => ch.charCodeAt(0)));
-    const c = JSON.parse(json);
-    if (!c.sheetId || !Array.isArray(c.beef) || !Array.isArray(c.sea)) throw new Error('內容不完整');
+    const c = migrateConfig(JSON.parse(json));
+    if (!c?.sheetId || !c.stores || !Object.keys(c.stores).length) throw new Error('內容不完整');
     cfg = c; save(LS.cfg, cfg); $('cfgInput').value = '';
+    if (!cfg.stores[store]) store = cfg.defaultStore || Object.keys(cfg.stores)[0];
     openDay(day); renderSettings(); toast('設定完成');
   } catch (e) { toast('設定碼不正確：' + e.message); }
 };
@@ -595,7 +695,7 @@ $('btnImport').onclick = () => {
     const d = JSON.parse($('backupBox').value);
     if (!d.records) throw new Error('格式不對');
     if (!confirm('還原會覆蓋這支手機上的紀錄，確定？')) return;
-    records = d.records; learnedTitles = d.learnedTitles || {};
+    records = migrateRecords(d.records); learnedTitles = d.learnedTitles || {};
     save(LS.rec, records); save(LS.titles, learnedTitles); openDay(day); toast('已還原');
   } catch (e) { toast('還原失敗：' + e.message); }
 };
