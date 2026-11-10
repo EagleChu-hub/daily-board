@@ -150,7 +150,8 @@
 
   <section class="card">
     <h2>盤點 <button class="btn" id="btnHistory" style="padding:6px 12px;font-size:14px">看歷史</button></h2>
-    <p class="hint" style="margin:-4px 0 10px">牛排、燒肉、肉片每天重新盤；其他帶入這家店上一次的數量。</p>
+    <p class="hint" style="margin:-4px 0 10px">牛排、燒肉、肉片每天重新盤；其他帶入這家店前一次的數量（別人填的那天也會從戰力檔抓）。</p>
+    <p class="hint" id="sheetSync" style="margin:-6px 0 10px"></p>
     <div class="seg">牛肉</div>
     <div id="beefList"></div>
     <div class="sub"><span>牛肉庫存成本</span><span id="beefSum">0.0</span></div>
@@ -225,7 +226,7 @@
 
 <script type="module">
 import { sheetHours, totalHours, normalizeShift, parseCSV, extractRoster, candidateTabs } from './lib/hours.js';
-import { migrateConfig, migrateRecords, recKey, prevRecords, carryStock, buildSubmitPayload, validateForSubmit } from './lib/store.js';
+import { migrateConfig, migrateRecords, recKey, prevRecords, carryStock, buildSubmitPayload, validateForSubmit, mergedHistory, snapToRec } from './lib/store.js';
 
 const $ = (id) => document.getElementById(id);
 const LS = { cfg: 'nx.cfg', rec: 'nx.records', titles: 'nx.titles', store: 'nx.store' };
@@ -239,6 +240,9 @@ save(LS.rec, records);
 let learnedTitles = load(LS.titles, {});
 let store = load(LS.store, null) || cfg?.defaultStore || '南西';
 const scfg = () => cfg?.stores?.[store] || null;
+// 戰力檔快照（雲端每小時唯讀抓一次；手機留一份，沒網路也能帶入）
+const snapsKey = (s) => 'nx.stock.' + s;
+let snaps = load(snapsKey(store), { at: null, items: [] });
 
 // ---------- 日期 ----------
 const WD = '日一二三四五六';
@@ -265,18 +269,43 @@ function blankRecord() {
   const sc = scfg();
   return {
     rev: '', cust: '', n88: '', staff: [],
-    beef: carryStock(records, store, day, 'beef', sc?.beef || []),
-    sea: carryStock(records, store, day, 'sea', sc?.sea || []),
+    beef: carryStock(records, store, day, 'beef', sc?.beef || [], snaps.items),
+    sea: carryStock(records, store, day, 'sea', sc?.sea || [], snaps.items),
   };
 }
 function openDay(d) {
   day = d;
   const k = recKey(store, day);
-  rec = records[k] ? structuredClone(records[k]) : blankRecord();
+  if (records[k]) rec = structuredClone(records[k]);
+  else {
+    // 這天她沒填、但戰力檔有（別人填的）→ 直接顯示那份
+    const sn = snaps.items.find((x) => x.date === day);
+    rec = sn ? { ...snapToRec(sn, scfg()), staff: [] } : blankRecord();
+  }
   renderAll();
 }
+async function refreshSnaps() {
+  const box = $('sheetSync');
+  const show = () => {
+    const last = snaps.items[0];
+    box.textContent = last ? `戰力檔最新：${md(last.date)}（${new Date(last.seenAt).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 讀到）` : '';
+  };
+  show();
+  if (!cfg?.stockUrl) return;
+  const s0 = store;
+  try {
+    const u = `${cfg.stockUrl}?action=stock&key=${encodeURIComponent(cfg.stockKey || '')}&store=${encodeURIComponent(s0)}`;
+    const r = await (await fetch(u, { cache: 'no-store' })).json();
+    if (!r.ok) throw new Error(r.error || '讀取失敗');
+    if (store !== s0) return;
+    snaps = { at: new Date().toISOString(), items: r.items || [] };
+    save(snapsKey(s0), snaps);
+    show();
+    if (!records[recKey(store, day)]) openDay(day); // 還沒動過的這一天 → 用新資料重新帶入
+  } catch (e) { box.textContent = `戰力檔資料暫時讀不到（${e.message}），先用手機裡的紀錄。`; }
+}
 function persist() { records[recKey(store, day)] = rec; save(LS.rec, records); }
-function switchStore(s) { store = s; save(LS.store, store); $('fetchMsg').innerHTML = ''; openDay(day); }
+function switchStore(s) { store = s; save(LS.store, store); snaps = load(snapsKey(store), { at: null, items: [] }); $('fetchMsg').innerHTML = ''; openDay(day); refreshSnaps(); }
 
 // ---------- 計算 ----------
 function calcSales() {
@@ -371,9 +400,9 @@ function renderStaff() {
 }
 
 function prevText(kind, i) {
-  const ps = prevRecords(records, store, day).filter((p) => num(p.rec[kind]?.[i]) != null).slice(0, 2);
+  const ps = mergedHistory(records, store, day, snaps.items, scfg()).filter((p) => num(p.rec[kind]?.[i]) != null).slice(0, 2);
   if (!ps.length) return '';
-  return ps.map((p, j) => `${j ? '前次' : '上次'} ${md(p.date)}：${p.rec[kind][i]}`).join('　');
+  return ps.map((p, j) => `${j ? '前次' : '上次'} ${md(p.date)}${p.source === 'sheet' ? '(戰力檔)' : ''}：${p.rec[kind][i]}`).join('　');
 }
 function renderStock() {
   for (const kind of ['beef', 'sea']) {
@@ -564,14 +593,14 @@ $('btnShare').onclick = async () => {
 
 // ---------- 歷史 ----------
 $('btnHistory').onclick = () => {
-  const list = prevRecords(records, store, '9999-12-31');
+  const list = mergedHistory(records, store, '9999-12-31', snaps.items, scfg());
   $('histTitle').textContent = `${store} 歷史`;
   if (!list.length) { $('histBody').innerHTML = '<p class="hint">還沒有紀錄。</p>'; }
   else {
-    $('histBody').innerHTML = `<table class="hist"><tr><th>日期</th><th>含稅</th><th>來客</th><th>庫存成本</th><th>送出</th></tr>${
+    $('histBody').innerHTML = `<table class="hist"><tr><th>日期</th><th>含稅</th><th>來客</th><th>庫存成本</th><th>狀態</th></tr>${
       list.map((p) => {
         const tot = sum(amounts('beef', p.rec)) + sum(amounts('sea', p.rec));
-        const st = { done: '✓', failed: '✗', pending: '…', working: '…', superseded: '–' }[p.rec.submit?.status] || '';
+        const st = p.source === 'sheet' ? '戰力檔' : ({ done: '✓', failed: '✗', pending: '…', working: '…', superseded: '–' }[p.rec.submit?.status] || '');
         return `<tr data-d="${p.date}" class="${p.date === day ? 'cur' : ''}"><td>${shortLabel(p.date)}</td><td>${esc(p.rec.rev || '–')}</td><td>${esc(p.rec.cust || '–')}</td><td>${f1(tot)}</td><td>${st}</td></tr>`;
       }).join('')}</table>`;
     $('histBody').querySelectorAll('tr[data-d]').forEach((tr) => tr.onclick = () => { $('sheetHistory').classList.remove('on'); $('fetchMsg').innerHTML = ''; openDay(tr.dataset.d); });
@@ -628,8 +657,8 @@ function pasteSteps() {
   const rows7 = Array.from({ length: 7 }, (_, i) => rec.staff[i] || { name: '', title: '', shift: '' });
   const steps = [];
   if (!scfg()?.dateCellIsFormula) steps.push({ cell: 'A2', what: '今天日期', text: slashDate(day) });
+  if (!scfg()?.tomorrowCellIsFormula) steps.push({ cell: 'F2', what: '明天日期', text: slashDate(addDays(day, 1)) });
   steps.push(
-    { cell: 'F2', what: '明天日期', text: slashDate(addDays(day, 1)) },
     { cell: 'B3', what: '營業額(含稅)', text: String(rec.rev ?? '') },
     { cell: 'B7', what: '來客數／平均客單／88份數（3 格往下）', text: [rec.cust, c.avg ?? '', rec.n88].join('\n') },
     { cell: 'D4', what: '人名＋職稱（2 欄×7 列，空的會清掉舊資料）', text: rows7.map((s) => `${s.name}\t${s.title}`).join('\n') },
@@ -682,7 +711,7 @@ $('btnApplyCfg').onclick = () => {
     if (!c?.sheetId || !c.stores || !Object.keys(c.stores).length) throw new Error('內容不完整');
     cfg = c; save(LS.cfg, cfg); $('cfgInput').value = '';
     if (!cfg.stores[store]) store = cfg.defaultStore || Object.keys(cfg.stores)[0];
-    openDay(day); renderSettings(); toast('設定完成');
+    snaps = load(snapsKey(store), { at: null, items: [] }); openDay(day); renderSettings(); refreshSnaps(); toast('設定完成');
   } catch (e) { toast('設定碼不正確：' + e.message); }
 };
 $('btnExport').onclick = async () => {
@@ -703,6 +732,7 @@ document.querySelectorAll('[data-close]').forEach((b) => b.onclick = () => b.clo
 document.querySelectorAll('.sheet').forEach((s) => s.addEventListener('click', (e) => { if (e.target === s) s.classList.remove('on'); }));
 
 openDay(day);
+refreshSnaps();
 </script>
 </body>
 </html>
