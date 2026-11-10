@@ -226,7 +226,7 @@
 
 <script type="module">
 import { sheetHours, totalHours, normalizeShift, parseCSV, extractRoster, candidateTabs } from './lib/hours.js';
-import { migrateConfig, migrateRecords, recKey, prevRecords, carryStock, buildSubmitPayload, validateForSubmit, mergedHistory, snapToRec } from './lib/store.js';
+import { migrateConfig, migrateRecords, recKey, prevRecords, carryStock, recarryStock, applySheetDay, markLegacyAuto, buildSubmitPayload, validateForSubmit, mergedHistory, snapToRec } from './lib/store.js';
 
 const $ = (id) => document.getElementById(id);
 const LS = { cfg: 'nx.cfg', rec: 'nx.records', titles: 'nx.titles', store: 'nx.store' };
@@ -236,6 +236,7 @@ const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } cat
 const DEFAULT_TITLE_OPTIONS = ['執行長', '區經理', '店長', '師傅', '內計時', '外計時', '打烊', '支援', '六小正', '正職'];
 let cfg = migrateConfig(load(LS.cfg, null));
 let records = migrateRecords(load(LS.rec, {}));
+markLegacyAuto(records, cfg); // 舊紀錄補「哪些盤點是自動帶入的」旗標（要在被戰力檔數字取代之前）
 save(LS.rec, records);
 let learnedTitles = load(LS.titles, {});
 let store = load(LS.store, null) || cfg?.defaultStore || '南西';
@@ -271,13 +272,19 @@ function blankRecord() {
     rev: '', cust: '', n88: '', staff: [],
     beef: carryStock(records, store, day, 'beef', sc?.beef || [], snaps.items),
     sea: carryStock(records, store, day, 'sea', sc?.sea || [], snaps.items),
+    auto: { beef: (sc?.beef || []).map(() => true), sea: (sc?.sea || []).map(() => true) }, // 還沒親手改過 → 新資料來時可重帶
   };
 }
 function openDay(d) {
   day = d;
   const k = recKey(store, day);
-  if (records[k]) rec = structuredClone(records[k]);
-  else {
+  if (records[k]) {
+    rec = structuredClone(records[k]);
+    // 戰力檔這天的數字比她手機上最後一次修改還新 → 改用戰力檔的
+    if (applySheetDay(rec, snaps.items.find((x) => x.date === day), scfg())) persist(rec.savedAt);
+    // 否則：她沒親手改過的盤點格，依最新的歷史（含戰力檔）重新帶入
+    else if (recarryStock(rec, records, store, day, scfg(), snaps.items)) persist(rec.savedAt);
+  } else {
     // 這天她沒填、但戰力檔有（別人填的）→ 直接顯示那份
     const sn = snaps.items.find((x) => x.date === day);
     rec = sn ? { ...snapToRec(sn, scfg()), staff: [] } : blankRecord();
@@ -301,10 +308,16 @@ async function refreshSnaps() {
     snaps = { at: new Date().toISOString(), items: r.items || [] };
     save(snapsKey(s0), snaps);
     show();
-    if (!records[recKey(store, day)]) openDay(day); // 還沒動過的這一天 → 用新資料重新帶入
+    const k = recKey(store, day);
+    if (!records[k]) openDay(day); // 還沒動過的這一天 → 用新資料重新帶入
+    else { // 已存在：戰力檔這天比較新就用戰力檔的；否則只重帶她沒親手改過的盤點格
+      const sn = snaps.items.find((x) => x.date === day);
+      if (applySheetDay(rec, sn, scfg())) { persist(rec.savedAt); renderAll(); }
+      else if (recarryStock(rec, records, store, day, scfg(), snaps.items)) { persist(rec.savedAt); renderAll(); }
+    }
   } catch (e) { box.textContent = `戰力檔資料暫時讀不到（${e.message}），先用手機裡的紀錄。`; }
 }
-function persist() { records[recKey(store, day)] = rec; save(LS.rec, records); }
+function persist(stamp) { rec.savedAt = stamp || new Date().toISOString(); records[recKey(store, day)] = rec; save(LS.rec, records); }
 function switchStore(s) { store = s; save(LS.store, store); snaps = load(snapsKey(store), { at: null, items: [] }); $('fetchMsg').innerHTML = ''; openDay(day); refreshSnaps(); }
 
 // ---------- 計算 ----------
@@ -418,11 +431,12 @@ function renderStock() {
         <div class="prev">${esc(prevText(kind, i))}</div>`;
       const inp = el.querySelector('input');
       const step = kind === 'beef' ? 0.1 : 1;
-      inp.addEventListener('input', () => { rec[kind][i] = inp.value.trim(); persist(); renderStockSums(); });
+      const touched = () => { rec.auto = rec.auto || {}; (rec.auto[kind] = rec.auto[kind] || [])[i] = false; };
+      inp.addEventListener('input', () => { rec[kind][i] = inp.value.trim(); touched(); persist(); renderStockSums(); });
       el.querySelectorAll('[data-d]').forEach((b) => b.addEventListener('click', () => {
         const cur = num(inp.value) ?? 0;
         const nv = Math.max(0, Math.round((cur + step * Number(b.dataset.d)) * 100) / 100);
-        inp.value = String(nv); rec[kind][i] = inp.value; persist(); renderStockSums();
+        inp.value = String(nv); rec[kind][i] = inp.value; touched(); persist(); renderStockSums();
       }));
       box.appendChild(el);
     });
@@ -724,7 +738,7 @@ $('btnImport').onclick = () => {
     const d = JSON.parse($('backupBox').value);
     if (!d.records) throw new Error('格式不對');
     if (!confirm('還原會覆蓋這支手機上的紀錄，確定？')) return;
-    records = migrateRecords(d.records); learnedTitles = d.learnedTitles || {};
+    records = migrateRecords(d.records); markLegacyAuto(records, cfg); learnedTitles = d.learnedTitles || {};
     save(LS.rec, records); save(LS.titles, learnedTitles); openDay(day); toast('已還原');
   } catch (e) { toast('還原失敗：' + e.message); }
 };
